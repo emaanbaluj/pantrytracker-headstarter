@@ -1,95 +1,132 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { useEffect, useState } from "react";
+import { collection, query, getDocs, doc, setDoc, addDoc, getDoc, deleteDoc } from "firebase/firestore";
+import { firestore } from "./firebase";
+import './styles.css'; // Import the CSS file
 
 export default function Home() {
+  const [inventory, setInventory] = useState([]);
+  const [itemName, setItemName] = useState('');
+  const [itemQuantity, setItemQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const updateInventory = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const snapshot = query(collection(firestore, 'inventory'));
+      const docs = await getDocs(snapshot);
+      const inventoryList = [];
+
+      docs.forEach(doc => {
+        inventoryList.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+
+      setInventory(inventoryList);
+    } catch (error) {
+      setError("Error fetching inventory.");
+      console.error("Error updating inventory:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addItem = async () => {
+    if (itemName.trim() === '' || itemQuantity <= 0) {
+      setError("Please enter a valid item name and quantity.");
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      await addDoc(collection(firestore, 'inventory'), {
+        name: itemName,
+        quantity: itemQuantity,
+      });
+
+      setItemName('');
+      setItemQuantity(1);
+      updateInventory();
+    } catch (error) {
+      setError("Error adding item.");
+      console.error("Error adding item:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeItem = async (itemId) => {
+    setLoading(true);
+    setError('');
+    try {
+      const docRef = doc(firestore, 'inventory', itemId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const { quantity } = docSnap.data();
+        if (quantity === 1) {
+          await deleteDoc(docRef);
+        } else {
+          await setDoc(docRef, { quantity: quantity - 1 });
+        }
+        updateInventory();
+      } else {
+        setError("Item does not exist.");
+      }
+    } catch (error) {
+      setError("Error removing item.");
+      console.error("Error removing item:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    updateInventory();
+  }, []);
+
   return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>app/page.js</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+    <div className="container">
+      <h1>Inventory Management</h1>
 
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
+      <div className="input-group">
+        <h2>Add New Item</h2>
+        <input
+          type="text"
+          placeholder="Item Name"
+          value={itemName}
+          onChange={(e) => setItemName(e.target.value)}
         />
+        <input
+          type="number"
+          placeholder="Quantity"
+          value={itemQuantity}
+          onChange={(e) => setItemQuantity(Number(e.target.value))}
+        />
+        <button onClick={addItem} disabled={loading}>
+          {loading ? 'Adding...' : 'Add Item'}
+        </button>
+        {error && <p className="error">{error}</p>}
       </div>
 
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
+      {loading && <p className="loading">Loading...</p>}
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+      <ul>
+        {inventory.map(item => (
+          <li key={item.id}>
+            {item.name} (Quantity: {item.quantity})
+            <button onClick={() => removeItem(item.id)} disabled={loading}>
+              {loading ? 'Removing...' : 'Remove'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
